@@ -42,6 +42,8 @@ def _option_line(prop: str, spec: dict[str, Any], required: bool) -> str:
     kind = "/".join(t for t in (raw if isinstance(raw, list) else [raw]) if t != "null")
     if "enum" in spec:
         kind = "|".join(str(v) for v in spec["enum"] if v is not None)
+    elif spec.get("format") == "local-file":
+        kind = "path to a file"
     elif spec.get("format"):
         kind = spec["format"]
     if kind == "array":

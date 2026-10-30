@@ -10,8 +10,10 @@ with no change here (D-12, FR-14).
 from __future__ import annotations
 
 import json
+import mimetypes
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Protocol
 
 import click
@@ -22,12 +24,17 @@ from farapi_cli import output
 # offered as --input-<name> instead, so the two can never collide.
 RESERVED = {"org", "json", "json_output", "api_url", "yes", "help"}
 METAVARS = {"uuid": "UUID", "date": "YYYY-MM-DD", "date-time": "DATETIME", "email": "EMAIL"}
+# A file on this machine: offered as a path, sent as what describes it, and
+# its bytes go where the tool's result says (see _upload).
+LOCAL_FILE = "local-file"
 
 
 class Runner(Protocol):
     def call(self, name: str, data: dict[str, Any], org: str | None) -> Any: ...
 
     def organization_slugs(self) -> list[str]: ...
+
+    def upload(self, target: dict[str, Any], path: Path) -> None: ...
 
 
 class MissingOrganization(click.UsageError):
@@ -85,6 +92,14 @@ def build_option(prop: str, spec: dict[str, Any], required: bool) -> click.Optio
     types, nullable = _types(spec)
     flag = flag_for(prop)
     pyname = flag[2:].replace("-", "_")
+    if spec.get("format") == LOCAL_FILE:
+        return click.Option(
+            [flag, pyname],
+            required=required,
+            type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path),
+            metavar="PATH",
+            help=_help(spec),
+        )
     if "boolean" in types:
         off = "--no-" + flag[2:]
         return click.Option([f"{flag}/{off}", pyname], default=None, help=_help(spec))
@@ -112,8 +127,19 @@ def build_option(prop: str, spec: dict[str, Any], required: bool) -> click.Optio
     )
 
 
+def _describe(path: Path) -> dict[str, Any]:
+    content_type, _ = mimetypes.guess_type(path.name)
+    return {
+        "name": path.name,
+        "size": path.stat().st_size,
+        "content_type": content_type or "application/octet-stream",
+    }
+
+
 def _value(spec: dict[str, Any], value: Any) -> Any:
     types, nullable = _types(spec)
+    if isinstance(value, Path):
+        return _describe(value)
     if isinstance(value, tuple):
         return list(value)
     if nullable and value == "null":
@@ -133,6 +159,19 @@ def _confirm(command: str) -> None:
             f"`farapi {command}` can't be undone. Add --yes to run it without a prompt."
         )
     click.confirm(f"`farapi {command}` can't be undone. Continue?", abort=True)
+
+
+def _upload(runner: Runner, result: Any, path: Path, org: str | None) -> Any:
+    """A tool with a file input answers where to send the bytes ("upload":
+    {url, fields}) and the tool that confirms they arrived ("complete":
+    {tool, input}). The confirmation's result is the command's."""
+    if not isinstance(result, dict) or "upload" not in result:
+        return result
+    runner.upload(result["upload"], path)
+    complete = result.get("complete")
+    if not complete:
+        return result
+    return runner.call(complete["tool"], complete.get("input", {}), org)
 
 
 def build_command(tool: dict[str, Any], runner_for: Callable[[], Runner]) -> click.Command:
@@ -166,10 +205,13 @@ def build_command(tool: dict[str, Any], runner_for: Callable[[], Runner]) -> cli
         yes = kwargs.pop("yes", False)
         kwargs.pop("api_url", None)  # read from argv before the catalog loads
         data: dict[str, Any] = {}
+        files: list[Path] = []
         for pyname, value in kwargs.items():
             if value is None or value == ():
                 continue
             prop = names[pyname]
+            if isinstance(value, Path):
+                files.append(value)
             data[prop] = _value(properties[prop], value)
         runner = runner_for()
         if org_scoped and not org:
@@ -177,6 +219,8 @@ def build_command(tool: dict[str, Any], runner_for: Callable[[], Runner]) -> cli
         if destructive and not yes:
             _confirm(" ".join(path))
         result = runner.call(tool["name"], data, org if org_scoped else None)
+        if files:
+            result = _upload(runner, result, files[0], org if org_scoped else None)
         output.emit(result, as_json, offset=data.get("offset"))
 
     example = tool.get("example", "")

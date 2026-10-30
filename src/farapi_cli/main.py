@@ -19,7 +19,7 @@ import click
 import httpx
 
 from farapi_cli import __version__, auth, catalog as catalogs, output, skill
-from farapi_cli.client import Client, make_http
+from farapi_cli.client import Client, make_http, upload_file
 from farapi_cli.commands import Runner, build_tree, command_path
 from farapi_cli.config import CredentialStore, api_url as resolve_api_url, cache_dir
 from farapi_cli.errors import ApiError, NotSignedIn, SignInFailed, Unreachable
@@ -59,6 +59,9 @@ class App:
     def organization_slugs(self) -> list[str]:
         result = self.client().call_tool("organizations.list", {}) or {}
         return [o["slug"] for o in result.get("items", [])]
+
+    def upload(self, target: dict[str, Any], path: Path) -> None:
+        upload_file(self.http, target, path)
 
     # The catalog's command tree --------------------------------------------
 

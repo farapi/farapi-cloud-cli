@@ -8,6 +8,7 @@ names as the X-Active-Org header the web and mobile apps already use (D-2).
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -96,3 +97,24 @@ def _api_error(response: httpx.Response) -> ApiError:
         body.get("params"),
         body.get("fields"),
     )
+
+
+# A file can take a while to send; the API's calls keep the short timeout.
+UPLOAD_TIMEOUT = 600.0
+
+
+def upload_file(http: httpx.Client, target: dict[str, Any], path: Path) -> None:
+    """Send a file's bytes to the signed POST a tool handed out. It goes
+    straight to storage, so it carries no farapi token."""
+    try:
+        with path.open("rb") as handle:
+            response = http.post(
+                target["url"],
+                data=target.get("fields", {}),
+                files={"file": (path.name, handle)},
+                timeout=UPLOAD_TIMEOUT,
+            )
+    except httpx.TransportError as exc:
+        raise Unreachable(str(exc)) from exc
+    if not response.is_success:
+        raise ApiError(response.status_code, "upload_failed")
