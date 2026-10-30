@@ -1,0 +1,50 @@
+[project]
+name = "farapi-cli"
+version = "0.1.0"
+description = "farapi-ops from the terminal: tasks, chats, projects and the inbox, for people and for Claude."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "click==8.5.0",
+    "httpx==0.28.1",
+    "keyring==25.7.0",
+]
+
+[project.scripts]
+farapi = "farapi_cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/farapi_cli"]
+
+[dependency-groups]
+# The backend's pins, so both packages lint and test the same way.
+dev = [
+    "pytest==8.3.4",
+    "ruff==0.16.5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# The backend's ruff settings (backend/ruff.toml), minus the Django rules.
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "C4", "SIM", "PLC0415"]
+ignore = [
+    # Rewrites `class X(str, Enum)` to `StrEnum`, which changes str(X.FOO).
+    "UP042",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*/__init__.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
