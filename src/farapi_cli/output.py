@@ -58,6 +58,8 @@ ERRORS: dict[str, str] = {
 
 # The columns a table prefers, in order; anything else scalar comes after.
 PREFERRED = (
+    # A task's ID, RQW-01, leads its row (spec 20 FR-14).
+    "key",
     "slug",
     "name",
     "title",
